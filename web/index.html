@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone catalog</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Phone catalog</h1>
+    <input id="q" type="search" placeholder="Search everything: oppo find n6, 16/512, 1tb, snapdragon, global, eu…" autocomplete="off" autofocus>
+    <div class="views" role="tablist">
+      <button data-view="models" class="on">Models</button>
+      <button data-view="offers">Offers</button>
+      <button data-view="updates" title="Price and stock changes between crawls">Updates</button>
+    </div>
+    <button id="reset" title="Clear the search and the sidebar filters (keeps the view and price options)">Reset filters</button>
+    <span id="fresh" class="muted"></span>
+  </header>
+
+  <div class="layout">
+    <aside id="side">
+      <section>
+        <label class="row"><input type="checkbox" id="stock" checked> In stock only</label>
+        <label class="row"><input type="checkbox" id="eu"> Ships from EU</label>
+        <div class="row price">
+          <input id="pmin" type="number" min="0" placeholder="€ min">
+          <input id="pmax" type="number" min="0" placeholder="€ max">
+        </div>
+      </section>
+      <section><h3>Price trend</h3><div id="f-trend" class="chips"></div></section>
+      <section><h3>Edition</h3><div id="f-editions"></div></section>
+      <section><h3>Manufacturer</h3><input id="brandq" type="search" placeholder="filter…"><div id="f-brands" class="scroll"></div></section>
+      <section><h3>Shop</h3><div id="f-sites"></div></section>
+      <section><h3>RAM</h3><div id="f-rams" class="chips"></div></section>
+      <section><h3>Storage</h3><div id="f-storages" class="chips"></div></section>
+      <section><h3>Colour</h3><div id="f-colors" class="chips"></div></section>
+      <section><h3>Chipset</h3><input id="chipq" type="search" placeholder="filter… (8 elite, dimensity)"><div id="f-chips" class="scroll"></div></section>
+      <section><h3>Battery</h3><div id="f-batts" class="chips"></div></section>
+      <section><h3>Condition</h3><div id="f-conds"></div></section>
+      <section><h3>Google Play</h3><div id="f-gplay"></div></section>
+      <section><h3>Type</h3><div id="f-types"></div></section>
+    </aside>
+
+    <main>
+      <div class="bar">
+        <span id="count"></span>
+        <label class="row split" title="One result line per model and colour; untick to group colours per model"><input type="checkbox" id="split" checked> Colours as separate lines</label>
+        <label class="row split" title="Prices include shipping to Lithuania, using the shop's method that leaves no import VAT/customs to pay where it offers one (giztop: Express). Hover a price for the method."><input type="checkbox" id="ship"> Include shipping</label>
+        <label class="row split" title="Use the shop's bank-transfer price where it gives a discount (wonda, gshopper: -4.5% on the item)"><input type="checkbox" id="bank"> Bank-transfer prices</label>
+        <label class="row split" title="Apply the best discount code at checkout (gshopper: gshopper150 = $150 off any order over $1000, codes printed on product pages). Hover a price for the code."><input type="checkbox" id="coupon"> Discount codes</label>
+        <span class="legend muted"><b class="best">best</b> cheapest for that variant · <span class="flag">u</span> unsealed by shop · <span class="flag">E</span> ships from EU · <span class="flag">US</span> ships from US · <span class="flag">b</span> bank-transfer price · <span class="flag">c</span> with discount code · <span class="flag">~</span> shipping estimated · <span class="flag warn">VAT?</span> import VAT may be due on delivery · <s>oos</s> out of stock</span>
+      </div>
+      <div id="out"></div>
+      <button id="more" class="link" hidden>Show more</button>
+    </main>
+  </div>
+
+  <!-- Data as a script (works when opened from disk; falls back to ../data/index.json if missing),
+       then the app. Loaded with a fresh URL each time: browsers cache files opened from disk too,
+       which would show the previous crawl. -->
+  <script>
+    const fresh = (src) => new Promise((ok, fail) => {
+      const s = document.createElement("script");
+      s.src = src + "?v=" + Date.now();
+      s.onload = ok;
+      s.onerror = fail;
+      document.body.append(s);
+    });
+    fresh("../data/catalog.js").catch(() => {}).then(() => fresh("app.js"));
+  </script>
+</body>
+</html>

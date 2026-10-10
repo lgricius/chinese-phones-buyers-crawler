@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Crawl data: raw HTTP responses (~200 MB), snapshots and everything built from them
+# (index, catalog.js, trends). Recreated by ./phones.sh crawl.
+data/
+
+# Temporary files from atomic writes
+*.tmp
+
+# Local tooling / OS
+.claude/
+.DS_Store
+.idea/
+.vscode/

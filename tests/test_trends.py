@@ -41,6 +41,17 @@ class TrendsTest(unittest.TestCase):
         self.assertEqual([p[0] for p in pts], [0, 2])  # nothing stored for the rate-only crawl
         self.assertEqual(pts[1][3], 950)
 
+    def test_shop_conversion_rate_move_is_not_a_change(self):
+        # wonda converts with a daily Shopify rate: EUR moves, the price before conversion doesn't
+        def w(eur, rate, stock=True):
+            return {**offer("wonda", "Blue", eur, stock), "price_base": round(eur / rate, 4)}
+        t = build([(RUNS[0], AT[0], "wonda", [w(1822.95, 0.896681)]), (RUNS[1], AT[1], "wonda", [w(1821.90, 0.896161)]),
+                   (RUNS[2], AT[2], "wonda", [w(1821.91, 0.896161, stock=False)]), (RUNS[3], AT[3], "wonda", [w(1700.00, 0.896161)])])
+        pts = t["series"][self.ids["Blue"]][1]
+        self.assertEqual([p[0] for p in pts], [0, 2, 3])  # stock change and the real drop only
+        self.assertEqual(pts[1][3], pts[0][3])
+        self.assertEqual([e["kind"] for e in trends.events(t)], ["drop", "out"])
+
     def test_events(self):
         ev = trends.events(self.t)
         got = sorted((e["site"], e["kind"], e["at"][:10]) for e in ev)

@@ -7,9 +7,10 @@
                      no longer listed), loaded when a chart or the Updates view needs it
 
 A series stores a point only when the price or stock changed; EUR None = no longer
-listed. Shops priced in another currency (USD at giztop/gshopper) are compared in that
-currency, so a move of the exchange rate is not a price change; `rate` is EUR per unit
-at that crawl, and the EUR price at any crawl is shop price x rate. New snapshots are
+listed. Shops that convert from another currency (USD at giztop/gshopper, wonda's
+Shopify Markets rate) are compared before the conversion, so a move of the exchange rate
+is not a price change; `rate` is EUR per unit at that crawl, and the EUR price at any
+crawl is shop price x rate. New snapshots are
 added incrementally; `reindex` rebuilds everything from the snapshots.
 """
 
@@ -43,22 +44,29 @@ def offer_id(o: dict) -> str:
 def _points(offers: list[dict]) -> tuple[str, float, dict[str, tuple[list, dict]]]:
     """(currency, EUR per unit, {id: (point without run index, description)}) of one snapshot.
     Two offers with the same id (rare) keep the in-stock / cheaper one."""
-    orig = [o for o in offers if o.get("currency_orig") and o.get("price_orig")]
-    cur = orig[0]["currency_orig"] if orig else "EUR"
-    rate = statistics.median(o["price_eur"] / o["price_orig"] for o in orig) if orig else 1.0
+    orig = [o for o in offers if base(o)]
+    cur = next((o["currency_orig"] for o in orig if o.get("currency_orig")), "EUR")
+    rate = statistics.median(o["price_eur"] / base(o) for o in orig) if orig else 1.0
     pts: dict[str, tuple[list, dict]] = {}
     for o in offers:
         i = offer_id(o)
-        pt = [round(o["price_eur"], 2), int(bool(o["in_stock"]))] + ([round(o["price_orig"], 2)] if o.get("currency_orig") and o.get("price_orig") else [])
+        pt = [round(o["price_eur"], 2), int(bool(o["in_stock"]))] + ([round(base(o), 4)] if base(o) else [])
         if i not in pts or (pt[1], -pt[0]) > (pts[i][0][1], -pts[i][0][0]):
             pts[i] = (pt, {k: o.get(k) for k in DESC_FIELDS})
     return cur, rate, pts
 
 
+def base(o: dict) -> float | None:
+    """Price before the shop's currency conversion, if the shop converts."""
+    return o.get("price_base") or (o.get("price_orig") if o.get("currency_orig") else None)
+
+
 def price_changed(a: list, b: list) -> bool:
-    """Points [run, EUR, stock(, shop price)]: compared in the shop's currency when both have it."""
+    """Points [run, EUR, stock(, shop price)]: compared in the shop's currency when both have it.
+    A shop price worked back from a EUR price rounded to cents is off by up to ~1 cent,
+    so it changed only by more than 0.01% (or a cent)."""
     if len(a) > 3 and len(b) > 3:
-        return abs(a[3] - b[3]) > SAME
+        return abs(a[3] - b[3]) > max(2 * SAME, a[3] * 1e-4)
     return abs(a[1] - b[1]) > SAME
 
 
@@ -81,7 +89,10 @@ def apply(t: dict, site: str, run: str, crawled_at: str, offers: list[dict]) -> 
             series[i] = [site, [new]]
         else:
             last = series[i][1][-1]
-            if last[1] is None or last[2] != new[2] or price_changed(last, new):
+            changed = last[1] is None or price_changed(last, new)
+            if not changed and len(last) > 3 and len(new) > 3:
+                new[3] = last[3]  # same shop price: keep it exactly, so the points compare equal
+            if changed or last[2] != new[2]:
                 series[i][1].append(new)
             elif len(last) == 3 and len(new) > 3:
                 last.append(new[3])  # same price, now also known in the shop's currency

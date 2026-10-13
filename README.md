@@ -144,6 +144,7 @@ The web toggle **Discount codes** and the CLI `--coupon` apply them. Codes expir
 | `coupon_code`, `coupon_eur`, `coupon_note`, `price_eur_coupon` | best discount code for this variant and its value in EUR (see Discount codes) |
 | `price_eur_bank`, `payment_note` | price with the marketplace's bank-transfer discount, applied to all its products from `BANK_TRANSFER_DISCOUNT` in `phones/config.py` (wonda, gshopper: 4.5%); the crawl warns if a site states a different value |
 | `price_orig`, `currency_orig` | price in the shop's own default currency (giztop USD), to check against the site |
+| `price_base` | wonda: the EUR price divided by the storefront's daily Shopify Markets rate; used only by the price trends |
 | `color`, `color_family` | one offer per colour: the shop's name ("Phantom Black") and a family comparable across shops (black, white, titanium, transparent, two-tone...) |
 | `color_verified` | price/stock confirmed for that colour (all three shops price colours individually; false only for old crawls) |
 | `firmware` | shop's ROM label (tradingshenzhen) |
@@ -190,7 +191,9 @@ was listed / removed. Twenty days of daily crawls with a few percent of prices m
 come to ~250 KB, so the web page loads the whole history in a blink.
 
 - Shops priced in USD (giztop, gshopper) are compared in USD: a move of the exchange rate alone is
-  not a price change. Charts show EUR at each crawl's rate.
+  not a price change. Wonda's EUR prices are converted from its base prices at a daily rate
+  (`Shopify.currency` on the page), so it is compared before that conversion (`price_base`).
+  Charts show EUR at each crawl's rate.
 - Statistics per offer are computed at index time (`trend` in `index.json`): last change (amount,
   %, when, previous price), lowest seen and since when, whether the price now is the lowest seen,
   30-day range and number of drops/rises, first seen, share of crawls in stock.

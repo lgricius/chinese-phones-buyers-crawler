@@ -73,19 +73,19 @@ def cheapest_rate(records: list[dict]) -> tuple[float | None, str | None]:
     return None, None
 
 
-def market(page: str) -> tuple[str | None, str | None]:
-    """(country, currency) shown by the storefront."""
+def market(page: str) -> tuple[str | None, str | None, float | None]:
+    """(country, currency, rate) shown by the storefront; rate: market currency per unit of
+    the shop's base currency. It moves daily, so every EUR price moves a little with it."""
     cur = re.search(r"Shopify\.currency\s*=\s*(\{[^}]*\})", page)
     country = re.search(r'Shopify\.country\s*=\s*"(\w+)"', page)
-    return (
-        country.group(1) if country else None,
-        json.loads(cur.group(1)).get("active") if cur else None,
-    )
+    cur = json.loads(cur.group(1)) if cur else {}
+    rate = float(cur["rate"]) if cur.get("rate") else None
+    return country.group(1) if country else None, cur.get("active"), rate
 
 
 def parse(records: list[dict], log) -> list[Offer]:
     page = next(r["body"] for r in records if r["kind"] in ("market", "rate"))
-    country, currency = market(page)
+    country, currency, rate = market(page)
     if currency != "EUR":
         raise RuntimeError(f"wonda: storefront currency is {currency}, expected EUR")
     products = [p for r in records if r["kind"] == "products" for p in json.loads(r["body"])["products"]]
@@ -121,6 +121,8 @@ def parse(records: list[dict], log) -> list[Offer]:
                 sku=v.get("sku"),
                 attrs={k: val for k, val in values.items() if val},
             )
+            if rate:
+                o.price_base = round(price / rate, 4)
             apply_shipping(o, config.SHIPPING[NAME], ship_eur, ship_method, delivers=True if ship_eur is not None else None)
             offers.append(o)
     return offers

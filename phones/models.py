@@ -55,6 +55,9 @@ class Offer:
     payment_note: str | None = None
     price_orig: float | None = None  # price in the shop's base currency, for checking against the site
     currency_orig: str | None = None
+    # price before the shop's own currency conversion (Shopify Markets at wonda): not shown,
+    # only used to tell the shop's price changes from moves of its exchange rate
+    price_base: float | None = None
     attrs: dict = field(default_factory=dict)  # raw site attributes, for reference
 
     @property

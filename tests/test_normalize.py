@@ -126,7 +126,7 @@ class PricingTest(unittest.TestCase):
         from phones.sites import wonda
 
         page = 'Shopify.country = "LT";\nShopify.currency = {"active":"EUR","rate":"0.896681"};'
-        self.assertEqual(wonda.market(page), ("LT", "EUR"))
+        self.assertEqual(wonda.market(page), ("LT", "EUR", 0.896681))
 
     def test_bank_transfer_wordings(self):
         for text in (

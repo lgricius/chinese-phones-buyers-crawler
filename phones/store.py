@@ -229,8 +229,8 @@ async def _fetch_site(name: str, run: str, log) -> tuple[str, Path | None, str |
 
 
 async def crawl(sites: list[str] | None = None, log=print, keep_raw: int = KEEP_RAW) -> dict:
-    """Fetch the given sites (default: all) concurrently, then parse and index."""
-    names = sites or ENABLED
+    """Fetch the given sites (default: all enabled; disabled ones are skipped) concurrently, then parse and index."""
+    names = [n for n in sites or ENABLED if n in ENABLED]
     now = datetime.now(timezone.utc)
     run, crawled_at = now.strftime("%Y-%m-%dT%H%M%SZ"), now.isoformat(timespec="seconds")
     _write_json(RAW / run / "run.json", {"crawled_at": crawled_at, "sites": names})

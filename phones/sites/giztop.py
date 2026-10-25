@@ -43,20 +43,11 @@ def usd_rate(records: list[dict]) -> float | None:
     return ratios[len(ratios) // 2] if ratios else None
 
 
-def details_html(text: str) -> str:
-    """The Details tab (description, 'Things To Know', spec table)."""
-    i = text.find('class="product info detailed"')
-    if i < 0:
-        return ""
-    j = text.find('class="block related"', i)
-    return text[i : j if j > 0 else i + 80000]
-
-
 def parse_product(url: str, text: str) -> list[Offer]:
     if magento.page_currency(text) not in (None, "EUR"):
         raise magento.WrongCurrency(f"giztop: expected EUR, got {magento.page_currency(text)} on {url}")
     title, in_stock, sku = magento.product_basics(text, url)
-    info = details.extract(details_html(text))
+    info = details.extract(magento.details_html(text))
     return [
         make_offer(
             site=NAME,

@@ -308,11 +308,12 @@ function cell(o, isBest, siblings) {
     (o.coupon_price ? `<span class="flag" title="${esc(`code ${o.coupon_code}: -${eur(o.coupon_eur)}`)}">c</span>` : "") +
     (S.ship && o.shipping_estimated ? '<span class="flag" title="shipping cost estimated: the shop does not quote it for Lithuania">~</span>' : "") +
     (S.ship && o.shipping_eur == null ? '<span class="flag" title="shipping cost unknown, not included">?</span>' : "") +
-    (o.vat === "not_stated" ? `<span class="flag warn" title="${esc(o.vat_note || "")}">VAT?</span>` : "");
+    (o.vat === "not_stated" ? `<span class="flag warn" title="${esc(o.vat_note || "")}">VAT?</span>` : "") +
+    (o.delivers === false ? '<span class="flag warn" title="the shop does not deliver to Lithuania">noLT</span>' : "");
   const tip = [o.title,
     `${o.color || "Colour not stated"}: ${eur(o.price_card)} standard` + (o.price_orig ? ` (site shows ${o.currency_orig} ${o.price_orig.toLocaleString("en-US")})` : ""),
     o.coupon_eur ? `Discount code ${o.coupon_code}: -${eur(o.coupon_eur)} (${o.coupon_note})${o.coupon_price ? "" : " - tick Discount codes"}` : "",
-    o.price_eur_bank ? `Bank transfer: ${o.payment_note}${o.coupon_price && o.bank_price ? ", taken after the code (stacking not confirmed)" : ""}` : "",
+    o.price_eur_bank ? `Bank transfer: ${o.payment_note}${o.coupon_price && o.bank_price ? ", taken after the code (stacking not confirmed)" : ""}` : o.payment_note || "",
     o.coupon_price || o.bank_price ? `Item after discounts: ${eur(o.price_item)}` : "",
     shipLine(o),
     S.ship ? `Total: ${eur(o.price_eur)}` : "",
@@ -445,7 +446,7 @@ function renderOffers(list) {
 
 const DAY = 864e5;
 const SAME = 0.005;
-const SHOPS = ["giztop", "wonda", "tradingshenzhen", "gshopper"]; // fixed chart colour per shop
+const SHOPS = ["giztop", "wonda", "tradingshenzhen", "gshopper", "geekwills", "trinity"]; // fixed chart colour per shop
 const shopColor = (site) => (SHOPS.includes(site) ? `var(--s${SHOPS.indexOf(site) + 1})` : "var(--muted)");
 const within = (iso, days) => !!iso && Date.now() - Date.parse(iso) <= days * DAY;
 const ago = (iso, short) => {

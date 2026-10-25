@@ -56,6 +56,7 @@ BRANDS = {
     "fairphone": "Fairphone",
     "hmd": "HMD",
     "nokia": "Nokia",
+    "moondrop": "Moondrop",
 }
 # Sub-brands that are part of the model name, not a separate brand prefix.
 # Brands that only sell international units: when a shop does not say, they are Global, not CN.

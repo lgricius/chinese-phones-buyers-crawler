@@ -156,14 +156,14 @@ async def fetch(client: BrowserClient, raw: RawWriter, log) -> None:
     await asyncio.gather(*(one(u) for u in urls))
 
 
-def parse_product(url: str, text: str, refreshes: list[dict]) -> list[Offer]:
+def parse_product(url: str, text: str, refreshes: list[dict], shop_countries: list[str] | None = None) -> list[Offer]:
     dp = _data_product(text)
     if not dp:
         return []
     groups = _groups(text)
     color, other, multi = _split_groups(groups)
     delivery = delivery_text(text)
-    countries = delivery_countries(text)
+    countries = delivery_countries(text) or shop_countries or []  # the list is shop-wide; out-of-stock pages lack the widget
     info = details.extract(details_html(text), delivery)
     title = html.unescape(dp.get("name") or url)
 
@@ -222,12 +222,12 @@ def parse(records: list[dict], log) -> list[Offer]:
     for r in records:
         if r["kind"] == "refresh":
             refreshes.setdefault(r["url"], []).append(r)
+    products = [r for r in records if r["kind"] == "product"]
+    shop_countries = next((c for c in (delivery_countries(r["body"]) for r in products) if c), [])
     offers: list[Offer] = []
-    for r in records:
-        if r["kind"] != "product":
-            continue
+    for r in products:
         try:
-            offers += parse_product(r["url"], r["body"], refreshes.get(r["url"], []))
+            offers += parse_product(r["url"], r["body"], refreshes.get(r["url"], []), shop_countries)
         except Exception as e:
             log(f"tradingshenzhen: cannot parse {r['url']}: {e}")
     return offers

@@ -8,7 +8,9 @@ with one shared attribute schema for every shop so offers can be compared like f
 | giztop.com | Magento | category pages + every product page (variant JSON) | shop's EUR switcher (cart quotes EUR; base currency USD, kept as `price_orig`) |
 | wondamobile.com | Shopify Markets | `products.json` (all variants + description) | the Lithuania/EUR market price list (not USD x rate - the market price differs) |
 | tradingshenzhen.com | PrestaShop + Cloudflare | category pages + every product page (data sheet, firmware options) | native EUR |
-| gshopper.com | Magento (swatch variants) | category pages + every product page + ship-to check per product | shop's EUR switcher; Ship To = Lithuania set in the session (deliverability, shipping, EU VAT included) |
+| geekwills.com | Magento (giztop's theme and USD prices) | the smartphones category + every product page (variant JSON) | **USD x ECB reference rate**: it charges in USD only, and its own EUR display uses 0.98 EUR/USD (~10% over ECB) |
+| gshopper.com | Next.js storefront on Magento (since 2026-10-16) | Magento GraphQL: the phones category with every variant + ship-to check per product | GraphQL prices in EUR (`Content-Currency`; the shop's rate from `/rest/V1/directory/currency`); Ship To = Lithuania set in the session (deliverability, shipping, EU VAT included) |
+| trinityelectronic.boutir.com | Boutir (Hong Kong shop platform) | storefront JSON API: every product with all variants (`/apis/storefront/products`) + one guest cart per crawl (shipping, automatic discount) | **HKD x ECB reference rate**: the cart charges HKD (its EUR display is ~0.3% over ECB); the automatic 3% storefront discount is included where the cart applies it |
 
 ## Setup
 
@@ -21,10 +23,11 @@ python3 -m venv .venv
 
 Prices are per market, so the crawler shops as a buyer from `phones/config.py`
 (`COUNTRY = "LT"`, `CURRENCY = "EUR"`) instead of relying on IP geolocation. Item prices only;
-shipping and taxes differ per shop: giztop pays EU VAT via IOSS (free express); tradingshenzhen
+shipping and taxes differ per shop: giztop and geekwills pay EU VAT via IOSS (Express); tradingshenzhen
 ships free from its EU warehouse, from €15 from China; gshopper prices include EU VAT, standard
 shipping to LT is free (`shipping_eur`, `delivery_note`), and items it cannot ship to LT are
-marked unavailable.
+marked unavailable; trinity ships from Hong Kong by courier and says nothing about VAT, so import
+VAT is left to the buyer.
 
 ## Usage
 
@@ -99,9 +102,11 @@ results) adds it to every price; on the CLI use `--shipping`. Bank discounts app
 | Shop | Method | Cost to LT | VAT / customs |
 |---|---|---|---|
 | giztop | Express (EU Priority), 6-10 days | €35.01 flat, quoted from a cart each crawl | paid by Giztop (IOSS). Air Mail is declared low: avoid it |
+| geekwills | Express, 5-8 days | $29.95 flat (€26.77 at ECB; the site shows €29.35 at its own rate), quoted from a cart each crawl | paid by Geekwills via IOSS ("in most cases", its customs page). IOSS covers parcels up to €150, so a phone is declared below its value |
 | tradingshenzhen | **no delivery to LT**: not in the delivery widget's country list (checked each crawl, offers get `delivers: false`) | - | - |
 | gshopper | Standard (per product ship-to check) | usually free | included in the price |
 | wonda | EU Standard, 8-10 working days | €53.80 flat, quoted from a cart each crawl | **not stated** (`VAT?`): 21% import VAT + carrier fee may be due on delivery |
+| trinity | Air Mail (FedEx Priority / DHL Express) from Hong Kong | HKD 500 flat per order (~€57 at ECB), quoted from a guest cart each crawl; the seller may change it per order | **not stated** (`VAT?`): nothing in its terms or product texts. A phone is over €150, so 21% LT import VAT on item + shipping and the courier's clearance fee are due on delivery (customs duty on phones is 0%) |
 
 Offers a shop does not deliver to `COUNTRY` (`delivers: false`) are hidden from queries;
 `--no-delivery` shows them, flagged `noLT`.
@@ -110,11 +115,23 @@ Offers a shop does not deliver to `COUNTRY` (`delivers: false`) are hidden from 
 
 `config.DISABLED_SITES` takes a shop out of crawls, the index, the web view and price trends,
 with the reason shown in the web view's header and the CLI legend. Its code and stored data
-are kept: remove the entry and crawl it to bring it back (`crawl --site <name>` still works
-while disabled, for checking). Currently disabled: **tradingshenzhen** (does not deliver to
-Lithuania; Latvia and Poland are in its list).
+are kept: remove the entry and crawl it to bring it back (`crawl --site <name>` skips it
+while disabled). Currently disabled: **trinity** and **geekwills** (removed from the
+catalog on request, 2026-10-18) and **tradingshenzhen** (removed on request, 2026-10-21; it does
+not deliver to Lithuania - Latvia and Poland are in its list).
 
-## Discount codes (gshopper)
+## Discount codes
+
+### geekwills
+
+None found that work (checked 2026-10-14 in a cart with a OnePlus 16, $1039). Rejected: every code
+on coupon sites and in Gizmochina posts (TAB3F, 25BF100/50/30, Y7D100/30, 15S50, X8U50, BESTCAM50,
+XM14U, H2025, GKP, 50GT7, BF2024) and guessed successors (26BF100, H2026, BF2025...). Magento gives
+the same answer for an expired code and for one limited to other products. Discounts show up as sale
+prices instead ("SAVE $50", already in the crawled price). Subscribing to the newsletter promises
+"up to 10% off first purchase" (not applied: one-off and per e-mail).
+
+### gshopper
 
 Gshopper's base currency is USD, so a "$150" code takes €132 off a EUR cart (shop rate 0.88).
 Codes are applied by rule, with no extra requests to the shop. The rules come from cart checks on 2026-10-10:
@@ -130,6 +147,14 @@ Codes are applied by rule, with no extra requests to the shop. The rules come fr
 
 The web toggle **Discount codes** and the CLI `--coupon` apply them. Codes expire, so re-check gshopper150 in the cart now and then.
 
+### trinity
+
+No codes. Its storefront campaign ("Enjoy 3% Summer Order Discount") is applied automatically
+to every guest cart, so it is part of `price_eur` (noted in `payment_note`). It is re-measured
+from the crawl's guest cart, so it disappears from the prices when the campaign ends. Products
+with `campaign_handling: 1` (camera kits, lenses, a few special editions) are excluded: their
+cart got no discount (checked 2026-10-16).
+
 ## Shared attributes (one schema for all sites)
 
 | Field | Meaning |
@@ -143,7 +168,7 @@ The web toggle **Discount codes** and the CLI `--coupon` apply them. Codes expir
 | `shipping_eur`, `shipping_method`, `shipping_estimated`, `vat`, `vat_note` | shipping to the buyer country and who pays import VAT: `included` / `shop` / `not_stated` (see Shipping and VAT) |
 | `coupon_code`, `coupon_eur`, `coupon_note`, `price_eur_coupon` | best discount code for this variant and its value in EUR (see Discount codes) |
 | `price_eur_bank`, `payment_note` | price with the marketplace's bank-transfer discount, applied to all its products from `BANK_TRANSFER_DISCOUNT` in `phones/config.py` (wonda, gshopper: 4.5%); the crawl warns if a site states a different value |
-| `price_orig`, `currency_orig` | price in the shop's own default currency (giztop USD), to check against the site |
+| `price_orig`, `currency_orig` | price in the shop's own default currency (giztop, geekwills: USD), to check against the site |
 | `price_base` | wonda: the EUR price divided by the storefront's daily Shopify Markets rate; used only by the price trends |
 | `color`, `color_family` | one offer per colour: the shop's name ("Phantom Black") and a family comparable across shops (black, white, titanium, transparent, two-tone...) |
 | `color_verified` | price/stock confirmed for that colour (all three shops price colours individually; false only for old crawls) |
@@ -190,7 +215,7 @@ per offer (shop + product link + chosen options) a point when its price or stock
 was listed / removed. Twenty days of daily crawls with a few percent of prices moving each day
 come to ~250 KB, so the web page loads the whole history in a blink.
 
-- Shops priced in USD (giztop, gshopper) are compared in USD: a move of the exchange rate alone is
+- Shops priced in USD (giztop, gshopper, geekwills) are compared in USD, trinity in HKD: a move of the exchange rate alone is
   not a price change. Wonda's EUR prices are converted from its base prices at a daily rate
   (`Shopify.currency` on the page), so it is compared before that conversion (`price_base`).
   Charts show EUR at each crawl's rate.

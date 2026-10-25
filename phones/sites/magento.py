@@ -1,4 +1,4 @@
-"""Shared Magento 2 storefront logic (giztop, gshopper).
+"""Shared Magento 2 storefront logic (giztop, gshopper, geekwills).
 
 Product pages carry configurable-product JSON with one entry per child product
 (colour x storage x warehouse...), each with its own price in the display
@@ -99,6 +99,15 @@ def product_basics(text: str, url: str) -> tuple[str, bool, str | None]:
     return title, bool(stock_m and stock_m.group(1) == "available"), sku_m.group(1).strip() if sku_m else None
 
 
+def details_html(text: str) -> str:
+    """The Details tab (description, 'Things To Know', spec table)."""
+    i = text.find('class="product info detailed"')
+    if i < 0:
+        return ""
+    j = text.find('class="block related"', i)
+    return text[i : j if j > 0 else i + 80000]
+
+
 def custom_options(text: str) -> list[tuple[str, list[tuple[str, float]]]]:
     """[(title, [(value name, price adjustment)])] for required variant-type custom options."""
     cfg = extract_json(text, "optionConfig") or {}
@@ -153,6 +162,32 @@ def product_config(text: str) -> dict | None:
     return next((c for c in configs if str(c.get("productId")) == pid), None)  # none: simple product
 
 
+def configured_variant(values: dict[str, str | None], price: float) -> dict:
+    """Variant of a configurable product from its attribute values (lower-case label -> value)."""
+    return {
+        "price": price,
+        "mem": next((v for k, v in values.items() if re.search(MEMORY_ATTR_RE, k) and v and n.parse_memory(v)[1]), None),
+        "color": next((v for k, v in values.items() if "colo" in k), None),
+        "versions": [v for k, v in values.items() if re.search(EDITION_OPTION_RE, k)],
+        "attrs": values,
+    }
+
+
+def single_variant(title: str, price: float) -> dict:
+    """Variant of a single-configuration product, e.g. "OPPO Find N5 Global Edition-Black-16GB - 512GB"."""
+    color_m = re.search(rf"-\s*((?:{n.COLOR_WORDS})(?:\s+\w+)?)\s*-", title, re.I) or re.search(
+        r"\d\s*(?:gb|tb|g|t)\s*-\s*([a-z][a-z ]{2,30})$", title, re.I  # "...-12G+512GB-Canyon Orange"
+    )
+    return {
+        "price": price,
+        # Title first; else make_offer uses the single-value RAM/ROM spec rows.
+        "mem": title if re.search(r"\d+\s*(gb|tb)", title, re.I) else None,
+        "color": color_m.group(1) if color_m else n.title_color(title),
+        "versions": [],
+        "attrs": {},
+    }
+
+
 def variants(text: str, title: str) -> list[dict]:
     """Every purchasable variant: {price, mem, color, versions, attrs} (attrs: lower-case label -> value)."""
     out: list[dict] = []
@@ -168,29 +203,12 @@ def variants(text: str, title: str) -> list[dict]:
             price = cfg["optionPrices"].get(child_id, {}).get("finalPrice", {}).get("amount")
             if price is None:
                 continue
-            out.append({
-                "price": price,
-                "mem": next((v for k, v in values.items() if re.search(MEMORY_ATTR_RE, k) and v and n.parse_memory(v)[1]), None),
-                "color": next((v for k, v in values.items() if "colo" in k), None),
-                "versions": [v for k, v in values.items() if re.search(EDITION_OPTION_RE, k)],
-                "attrs": values,
-            })
+            out.append(configured_variant(values, price))
     else:
-        # Single-configuration page, e.g. "OPPO Find N5 Global Edition-Black-16GB - 512GB"
         price = main_price(text)
         if price is None:
             return []
-        color_m = re.search(rf"-\s*((?:{n.COLOR_WORDS})(?:\s+\w+)?)\s*-", title, re.I) or re.search(
-            r"\d\s*(?:gb|tb|g|t)\s*-\s*([a-z][a-z ]{2,30})$", title, re.I  # "...-12G+512GB-Canyon Orange"
-        )
-        out.append({
-            "price": price,
-            # Title first; else make_offer uses the single-value RAM/ROM spec rows.
-            "mem": title if re.search(r"\d+\s*(gb|tb)", title, re.I) else None,
-            "color": color_m.group(1) if color_m else n.title_color(title),
-            "versions": [],
-            "attrs": {},
-        })
+        out.append(single_variant(title, price))
 
     # Required custom options multiply the variants: "Software: Global ROM (Flashed) + €8.76",
     # "Color-Storage: Black Gold-16GB-1TB + €26.27".
@@ -220,6 +238,8 @@ async def quote_shipping(client: BrowserClient, base: str, url: str, text: str, 
     if not form or not fk:
         return None
     data = {"product": main_product_id(text), "form_key": fk.group(1), "qty": "1"}
+    # Cached pages carry different form keys; the cart checks the posted one against the cookie.
+    client.session.cookies.set("form_key", fk.group(1), domain=re.match(r"https?://([^/]+)", base).group(1))
     cfg = product_config(text)
     if cfg and cfg.get("index"):
         for aid, oid in next(iter(cfg["index"].values())).items():

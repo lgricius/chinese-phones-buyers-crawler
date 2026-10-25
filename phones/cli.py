@@ -98,9 +98,11 @@ def _freshness(index: dict) -> str:
 
 
 def cmd_crawl(a) -> int:
-    names = a.site or ENABLED
-    for n in set(names) & set(DISABLED_SITES):
-        print(f"note: {n} is disabled ({DISABLED_SITES[n]}); crawled and stored, but left out of the index")
+    for n in sorted(set(a.site or []) & set(DISABLED_SITES)):
+        print(f"skipping {n}: disabled ({DISABLED_SITES[n]})")
+    names = [n for n in a.site or ENABLED if n in ENABLED]
+    if not names:
+        return 1
     print(f"crawling {', '.join(names)} concurrently...")
     log = (lambda m: print("  " + m)) if a.verbose else (lambda m: None)
     summary = asyncio.run(store.crawl(names, log=log, keep_raw=a.keep_raw))
@@ -350,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         sp.add_argument("--json", action="store_true", help="machine-readable output")
 
     c = sub.add_parser("crawl", help="crawl sites concurrently and update the index")
-    c.add_argument("--site", action="append", choices=list(SITES), help="repeatable; default all")
+    c.add_argument("--site", action="append", choices=list(SITES), help="repeatable; default all enabled (disabled sites are skipped)")
     c.add_argument("--keep-raw", type=int, default=store.KEEP_RAW, help="raw crawls to keep for reindex (default %(default)s)")
     c.add_argument("-v", "--verbose", action="store_true")
     c.set_defaults(func=cmd_crawl)

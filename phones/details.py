@@ -168,12 +168,13 @@ def clean_chipset(v: str | None) -> str | None:
     if not v:
         return None
     v = re.sub(r"\bCPU:\s*", "", v, flags=re.I)
+    v = re.sub(r"[®™]", "", v)  # "Snapdragon® 8 Elite Gen 5"
     m = re.search(
         r"(snapdragon\s+[\w\s+]*?(?:gen\s*\d+|\d{3}\+?)(?:\s+(?:leading|elite|extreme))?|dimensity\s+\d+\+?\w*|kirin\s+\d+\w*|tensor\s+g\d+|exynos\s+\d+|a\d{2}\s+(?:pro|bionic)?|xring\s+\w+|helio\s+\w+|unisoc\s+\w+)",
         v,
         re.I,
     )
-    s = m.group(1) if m else v.split(",")[0].split(" - ")[0]
+    s = m.group(1) if m else re.split(r"[,，（]", v)[0].split(" - ")[0]
     s = re.sub(r"^qualcomm\s+(sm\w+\s+)?", "", s.strip(), flags=re.I)
     s = re.sub(r"\s+", " ", s).strip()
     s = re.sub(r"\s+(soc|chipset|processor|platform|mobile platform)$", "", s, flags=re.I)

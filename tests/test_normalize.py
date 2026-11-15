@@ -40,6 +40,12 @@ class ModelKeyTest(unittest.TestCase):
             ("OPPO Find N5 Global Edition-Black-16GB - 512GB", "Oppo Find N5 5G (Global Version) Dual SIM", "OPPO Find N5"),
             ("Realme GT 7 Pro-Grey-12GB - 256GB", "Realme GT 7 Pro"),
             ("OnePlus 15 Global", "Oneplus 15 5G (Global Rom) Dual SIM", "OnePlus 15 - 16GB/1TB"),
+            ("Huawei Mate 90 RS", "HUAWEI Mate 90 RS Ultimate Design 5G", "Huawei Mate 90 RS Ultimate design", "Huawei Mate 90 RS Ultimate"),
+            ("Huawei Mate XT2 Ultimate Design", "Huawei Mate Xt2 China version"),
+            ("Sony 1 VIII (Global version)", "Sony Xperia 1 VIII", "Sony 1VIII"),
+            ("Vivo X300 Ultra Chinese version/ROM", "Vivo X300 Ultra"),
+            ("Honor Win 2 Chinese Verison", "Honor Win 2"),
+            ("Samsung z trifold Taiwan version", "Samsung Z TriFold"),
         ]:
             self.assertEqual(len({self.key(t) for t in titles}), 1, titles)
 

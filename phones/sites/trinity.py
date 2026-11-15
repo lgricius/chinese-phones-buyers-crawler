@@ -7,11 +7,18 @@ crawl day. Products and all their variants come from the storefront JSON API
 (/apis/storefront/products). Stock is not tracked per variant ("unlimited quantity"):
 a product is in stock when the shop lists it under stock_type=in_stock.
 
-One guest cart per crawl (/apis/storefront/orders, step 0, never checked out) gives:
-- shipping to the buyer: one international method, "Air Mail" by FedEx Priority / DHL
-  Express from Hong Kong, a flat HKD 500 per order (the seller can change it per order);
-- the automatic storefront campaign ("Enjoy 3% Summer Order Discount", no code), which
-  every guest cart gets: included in the price while the cart applies it.
+One guest cart per crawl (/apis/storefront/orders, step 0, never checked out; the shop
+reads the buyer country from the IP) gives:
+- shipping options, each limited to `delivery_areas` (none = worldwide). To LT: "Air Mail"
+  by FedEx Priority / DHL Express from Hong Kong, a flat HKD 500 per order (the seller can
+  change it per order); the HKD 400 option is for GB/US only, "Store Pickup" is in Mong Kok;
+- the storefront campaigns every guest sees (`all_can_see_campaigns`): automatic order
+  discounts with no code, e.g. "11-11 Crazy Sale", 5% off orders of HKD 10000 or more,
+  not on items already discounted. They are applied per product by their own rules
+  (minimum spend, exclusions, dates), so a cheaper phone does not get them; products
+  with campaign_handling 1 (camera kits, some special editions) never do.
+No public promo codes (checked 2026-11-12: none on the site, Facebook or coupon sites),
+no payment-method discount or card surcharge.
 VAT/customs: the shop says nothing (terms, product texts). A phone is over €150, so
 import VAT (21% in LT) and the courier's clearance fee are due on delivery: vat
 "not_stated", as at wonda."""
@@ -46,6 +53,10 @@ TITLE_TYPOS = [
     (r"\bxfold\s*(?=\d)", "X Fold "), (r"\bmate (\d+)rs\b", r"Mate \1 RS"), (r"\bx90pro\b", "X90 Pro"),
     (r"^porsche design\s*\|?\s*(honor .*)$", r"\1 Porsche Design"),
     (r"\s*\(?\bready (?:stock )?to ship\b\)?", ""),
+    # Marketing tails: "HUAWEI Mate 90 RS Ultimate Design 5G – HarmonyOS 7.0 | Kirin 9050 Pro | ..."
+    (r"\s+[–—|]\s.*$", ""),
+    # Shipping-date notes: "(16-November start shipping ）", "（ship on 17-October）", "(14 Nov ship）"
+    (r"\s*[(（][^()（）]*\bship(?:ping)?\b[^()（）]*[)）]?", ""), (r"\s*\(20\d\d\)", ""), (r"\bmate xt (\d)\b", r"Mate XT\1"),
 ]
 
 
@@ -113,25 +124,75 @@ def ecb_rate(records: list[dict]) -> tuple[float | None, str | None]:
     return None, None
 
 
-def cart_terms(records: list[dict]) -> tuple[float | None, str | None, float, str | None]:
-    """(shipping HKD, method, automatic campaign discount as a fraction, campaign name) from the cart quote."""
+def _cart(records: list[dict]) -> dict | None:
     for r in records:
-        if r["kind"] != "cart":
-            continue
-        try:
-            d = json.loads(r["body"])
-        except ValueError:
-            return None, None, 0.0, None
-        if "order" not in d:
-            return None, None, 0.0, None
-        # The courier method; "Store Pickup" is in Hong Kong.
-        ship = next((o for o in d.get("store_shipping_options") or [] if o.get("enabled") and o.get("courier_name")), None)
-        o = d["order"]
+        if r["kind"] == "cart":
+            try:
+                d = json.loads(r["body"])
+            except ValueError:
+                return None
+            return d if "order" in d else None
+    return None
+
+
+def _serves(option: dict, country: str) -> bool:
+    """A shipping option delivers to `country`: no delivery areas means worldwide."""
+    codes = lambda key: {a.get("country_code") for a in option.get(key) or []}
+    return (not option.get("delivery_areas") or country in codes("delivery_areas")) and country not in codes("excluded_delivery_areas")
+
+
+def cart_shipping(records: list[dict]) -> tuple[float | None, str | None, bool | None]:
+    """(shipping HKD, method, delivers) to config.COUNTRY: the cheapest courier option serving it.
+    (None, None, None) without a cart quote; delivers=False when no courier option serves the country."""
+    d = _cart(records)
+    if d is None:
+        return None, None, None
+    opts = [o for o in d.get("store_shipping_options") or []
+            if o.get("enabled") and o.get("courier_name") and _serves(o, config.COUNTRY)]  # "Store Pickup" has no courier
+    if not opts:
+        return None, None, False
+    ship = min(opts, key=lambda o: float(o["option_price"]))
+    method = f"{ship['shipping_option']} ({re.sub(r'\s*,\s*', ' / ', ship['courier_name'].strip())})"
+    return float(ship["option_price"]), method, True
+
+
+def cart_campaigns(records: list[dict]) -> list[dict]:
+    """Automatic order discounts every guest gets (no code), from the cart quote:
+    [{name, pct, min_hkd, excluded_products, excluded_categories, excluded_hashtags}].
+    Old raw runs without the campaign list: the cart's own discount as a share of the subtotal."""
+    d = _cart(records)
+    if d is None:
+        return []
+    o = d["order"]
+    if "all_can_see_campaigns" not in d:
         pct = (o.get("discount") or 0) / o["subtotal"] if o.get("subtotal") else 0.0
         names = ", ".join(c.get("name") or c.get("kind") for c in o.get("campaigns") or []) or None
-        method = f"{ship['shipping_option']} ({re.sub(r'\s*,\s*', ' / ', ship['courier_name'].strip())})" if ship else None
-        return (float(ship["option_price"]) if ship else None), method, round(pct, 4), names
-    return None, None, 0.0, None
+        return [{"name": names, "pct": round(pct, 4), "min_hkd": 0}] if pct else []
+    at = o.get("created_at") or ""
+    out = []
+    for c in d["all_can_see_campaigns"]:
+        pct = c.get("discount_amount") or 0
+        if (c.get("status") != "active" or c.get("target_type") != "all_customer" or c.get("discount_type") != "single_discount"
+                or not 0 < pct < 1 or c.get("cash_coupon") or not (c.get("started_at") or "") <= at <= (c.get("ended_at") or "9999")):
+            continue  # members-only, tiered, cash or not running at quote time: not modelled
+        out.append({"name": c.get("name"), "pct": pct, "ends": (c.get("ended_at") or "")[:10] or None,
+                    "min_hkd": c.get("min_spend_amount") or 0 if c.get("has_min_spend_amount", True) else 0,
+                    "excluded_products": set(c.get("excluded_product_ids") or []),
+                    "excluded_categories": set(c.get("excluded_category_ids") or []),
+                    "excluded_hashtags": {h.lower() for h in c.get("excluded_hashtags") or []}})
+    return out
+
+
+def best_campaign(p: dict, v: dict, campaigns: list[dict]) -> dict | None:
+    """The best automatic campaign for one unit of variant `v` of product `p`. Checked in the
+    cart 2026-11-12: 5% at HKD 13800 and 15000, nothing at HKD 8280; campaign_handling 1 is
+    excluded ("checked 2026-10-16"), and so are discounted items (original price above price)."""
+    if p.get("campaign_handling") != 0 or (v.get("original_price") or 0) > v["price"]:
+        return None
+    ok = [c for c in campaigns if v["price"] >= c["min_hkd"] and p["id"] not in c.get("excluded_products", ())
+          and not set(p.get("category_ids") or []) & c.get("excluded_categories", set())
+          and not {h.lower() for h in p.get("hashtags") or []} & c.get("excluded_hashtags", set())]
+    return max(ok, key=lambda c: c["pct"], default=None)
 
 
 def option_value(v: dict) -> str:
@@ -177,6 +238,8 @@ def parse_product(p: dict, listed_in_stock: bool) -> list[Offer]:
     info = details.extract(text)
     offers = []
     for v in p["variants"]:
+        if not v.get("price"):  # HKD 0: a placeholder on sold-out listings, not a price
+            continue
         value = option_value(v)
         o = make_offer(
             site=NAME,
@@ -194,6 +257,7 @@ def parse_product(p: dict, listed_in_stock: bool) -> list[Offer]:
         # Camera kits, lenses, pens: no RAM/storage anywhere.
         if o.storage_gb is None and re.search(r"\b(kit|lens|set|pen|stylus|keyboard)\b", title, re.I):
             o.device_type = "accessory"
+        o.ships_from = "hk"  # the shop and its courier dispatch are in Hong Kong (Mong Kok)
         offers.append(o)
     return offers
 
@@ -202,11 +266,13 @@ def parse(records: list[dict], log) -> list[Offer]:
     rate, day = ecb_rate(records)
     if rate is None:
         rate, day = FALLBACK_RATE, "fallback"
-    ship_hkd, ship_method, discount, campaign = cart_terms(records)
+    ship_hkd, ship_method, delivers = cart_shipping(records)
+    campaigns = cart_campaigns(records)
     ship_eur = round(ship_hkd * rate, 2) if ship_hkd is not None else None
     log(f"trinity: ECB rate {rate} EUR per HKD ({day}); shipping to {config.COUNTRY}: "
-        + (f"{ship_method} HKD {ship_hkd:g} = €{ship_eur}" if ship_hkd is not None else "not quoted, using config")
-        + (f"; automatic discount {discount:.1%} ({campaign})" if discount else ""))
+        + (f"{ship_method} HKD {ship_hkd:g} = €{ship_eur}" if ship_hkd is not None
+           else "no courier option" if delivers is False else "not quoted, using config")
+        + "".join(f"; automatic {c['pct']:.0%} '{c['name']}'" + (f" from HKD {c['min_hkd']:g}" if c["min_hkd"] else "") for c in campaigns))
     in_stock = {p["id"] for r in records if r["kind"] == "listing_in_stock" for p in json.loads(r["body"])["products"]}
     products = [json.loads(r["body"]) for r in records if r["kind"] == "product" and r.get("status", 200) == 200]
     offers: list[Offer] = []
@@ -217,12 +283,13 @@ def parse(records: list[dict], log) -> list[Offer]:
         except Exception as e:
             log(f"trinity: cannot parse {p.get('product_url')}: {e}")
             continue
-        off = discount if p.get("campaign_handling") == 0 else 0.0  # 1: excluded from campaigns (checked in the cart)
-        for o in got:
-            hkd = round(o.price_eur * (1 - off), 2)
+        for v, o in zip([v for v in p["variants"] if v.get("price")], got):
+            c = best_campaign(p, v, campaigns)
+            hkd = round(v["price"] * (1 - c["pct"]), 2) if c else float(v["price"])
             o.price_orig, o.currency_orig = hkd, "HKD"
             o.price_eur = round(hkd * rate, 2)
-            o.payment_note = note + (f"; includes the automatic {off:.0%} '{campaign}' discount (cart)" if off else "")
-            apply_shipping(o, config.SHIPPING[NAME], ship_eur, ship_method, delivers=True if ship_eur is not None else None)
+            o.payment_note = note + (f"; includes the automatic {c['pct']:.0%} '{c['name']}' discount (no code"
+                                     + (f", until {c['ends']}" if c.get("ends") else "") + ")" if c else "")
+            apply_shipping(o, config.SHIPPING[NAME], ship_eur, ship_method, delivers=delivers)
         offers += got
     return offers

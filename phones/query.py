@@ -85,7 +85,25 @@ def parse_storage(s: str | None) -> int | None:
 
 
 def resolve_models(query: str, offers: list[dict], family: bool = False) -> tuple[list[str], list[str]]:
-    """Map free text to model_keys. Returns (matched keys, suggestions).
+    """Map free text to model_keys. Returns (matched keys, suggestions). Several models can be
+    given separated by commas ("xiaomi 18 pro, oppo find x10 pro max"): the matches of each part
+    are combined, suggestions come from the parts that matched nothing."""
+    keys: list[str] = []
+    suggestions: list[str] = []
+    for part in [p for p in query.split(",") if p.strip()] or [query]:
+        k, s = _resolve_one(part, offers, family)
+        keys += [x for x in k if x not in keys]
+        suggestions += [x for x in s if x not in suggestions]
+    return keys, suggestions
+
+
+def unmatched_parts(query: str | None, offers: list[dict], family: bool = False) -> list[str]:
+    """The comma-separated parts of a model query that match no model."""
+    return [p.strip() for p in (query or "").split(",") if p.strip() and not _resolve_one(p, offers, family)[0]]
+
+
+def _resolve_one(query: str, offers: list[dict], family: bool = False) -> tuple[list[str], list[str]]:
+    """One model name to model_keys.
 
     Exact normalized match wins ("honor magic 9 pro max" does not pull in
     "honor magic 9"). With family=True, or when there is no exact match, every

@@ -43,7 +43,10 @@ def offer_id(o: dict) -> str:
 
 def _points(offers: list[dict]) -> tuple[str, float, dict[str, tuple[list, dict]]]:
     """(currency, EUR per unit, {id: (point without run index, description)}) of one snapshot.
-    Two offers with the same id (rare) keep the in-stock / cheaper one."""
+    Two offers with the same id (rare) keep the in-stock / cheaper one. A price of 0 is a shop's
+    placeholder (trinity listed a sold-out phone at HKD 0), not a price: such an offer counts as
+    not listed in that crawl."""
+    offers = [o for o in offers if o["price_eur"] > 0]
     orig = [o for o in offers if base(o)]
     cur = next((o["currency_orig"] for o in orig if o.get("currency_orig")), "EUR")
     rate = statistics.median(o["price_eur"] / base(o) for o in orig) if orig else 1.0

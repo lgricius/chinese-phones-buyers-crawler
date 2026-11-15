@@ -66,6 +66,7 @@ async function load() {
     price_card: o.price_eur,
     cfg: `${o.model_key}|${o.ram_gb}|${o.storage_gb}|${o.edition}`,
     name: norm([o.brand, o.model, o.model_key, o.title]),
+    model_name: norm([o.brand, o.model, o.model_key]), // bare numbers match here only: titles carry dates, "16-November start shipping"
     hay: " " + [o.brand, o.model, o.title, o.site, o.chipset, o.os, o.color, o.color_family, EDITIONS[o.edition], o.edition,
       CONDITIONS[o.condition], o.ships_from === "eu" ? "eu europe" : "", o.sku].join(" ").toLowerCase().replace(/\s+/g, " ") + " ",
   }));
@@ -95,8 +96,14 @@ function toGb(n, unit) {
 }
 
 // Free text; "16/512", "12+256gb", "1tb", "16gb" become RAM/storage filters.
+// Commas separate searches whose results are combined: "xiaomi 18 pro, oppo find x10 16/512"
+// (RAM/storage and other words apply to their own part only).
 function parseQuery(q) {
-  const out = { words: [], ram: null, storage: null };
+  return { parts: q.split(",").map(parsePart).filter((p) => p.words.length || p.ram != null || p.storage != null) };
+}
+
+function parsePart(q) {
+  const out = { words: [], ram: null, storage: null, field: null };
   for (const t of q.toLowerCase().split(/\s+/).filter(Boolean)) {
     let m;
     if ((m = t.match(/^(\d{1,2})(?:gb)?[/+](\d{1,4})(gb|tb)?$/))) {
@@ -114,20 +121,28 @@ let Q = parseQuery("");
 // Words match the start of a word ("find" ~ "finder"); bare numbers must match a
 // whole word ("9" does not match "90"). Names are searched first; when that finds
 // nothing (with the other filters applied) all fields are searched: chipset, OS, colours...
+// Each comma-separated part decides that on its own.
 const wordHit = (text, w) => (/^\d+$/.test(w) ? text.includes(` ${w} `) : text.includes(" " + w));
 
-function pass(o, except) {
+function partHit(o, p) {
+  if (p.ram != null && o.ram_gb !== p.ram) return false;
+  if (p.storage != null && o.storage_gb !== p.storage) return false;
+  // In a name search a bare number is a model number ("oneplus 16"): matched in the model name, not the
+  // shop's title, where "OnePlus 15 (16-November start shipping)" would match it.
+  return !p.field || p.words.every((w) => wordHit(p.field === "name" && /^\d+$/.test(w) ? o.model_name : o[p.field], w));
+}
+
+// `only`: test one search part (to pick its field), else any part may match.
+function pass(o, except, only) {
   const upd = S.view === "updates"; // changes include sold-out offers; the change type replaces the trend filter
   if (S.stock && !o.in_stock && !upd) return false;
   if (S.trend && !upd && except !== "trend" && !TREND_FILTERS[S.trend][1](o.trend)) return false;
   if (S.eu && o.ships_from !== "eu") return false;
   if (S.pmin !== "" && o.price_eur < +S.pmin) return false;
   if (S.pmax !== "" && o.price_eur > +S.pmax) return false;
-  if (Q.ram != null && o.ram_gb !== Q.ram) return false;
-  if (Q.storage != null && o.storage_gb !== Q.storage) return false;
-  if (Q.field) for (const w of Q.words) if (!wordHit(o[Q.field], w)) return false;
   for (const [name, fn] of Object.entries(FACETS)) if (name !== except && S[name].size && !S[name].has(fn(o))) return false;
-  return true;
+  if (only) return partHit(o, only);
+  return !Q.parts.length || Q.parts.some((p) => partHit(o, p));
 }
 
 // ---------- facets ----------
@@ -446,7 +461,7 @@ function renderOffers(list) {
 
 const DAY = 864e5;
 const SAME = 0.005;
-const SHOPS = ["giztop", "wonda", "tradingshenzhen", "gshopper", "geekwills", "trinity"]; // fixed chart colour per shop
+const SHOPS = ["giztop", "wonda", "tradingshenzhen", "gshopper", "geekwills", "trinity", "mobilemarvel"]; // fixed chart colour per shop
 const shopColor = (site) => (SHOPS.includes(site) ? `var(--s${SHOPS.indexOf(site) + 1})` : "var(--muted)");
 const within = (iso, days) => !!iso && Date.now() - Date.parse(iso) <= days * DAY;
 const ago = (iso, short) => {
@@ -811,12 +826,12 @@ function render() {
     o.price_eur = S.ship ? Math.round((o.price_item + (o.shipping_eur ?? 0)) * 100) / 100 : o.price_item;
   }
   Q = parseQuery(S.q);
-  Q.field = Q.words.length ? "name" : null;
-  let list = OFFERS.filter((o) => pass(o));
-  if (!list.length && Q.field) {
-    Q.field = "hay";
-    list = OFFERS.filter((o) => pass(o));
+  for (const p of Q.parts) {
+    if (!p.words.length) continue;
+    p.field = "name";
+    if (!OFFERS.some((o) => pass(o, undefined, p))) p.field = "hay";
   }
+  const list = OFFERS.filter((o) => pass(o));
   CHARTS.clear();
   $("#out").innerHTML = S.view === "models" ? renderModels(list) : S.view === "offers" ? renderOffers(list) : renderUpdates();
   renderFacets();

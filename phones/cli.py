@@ -104,7 +104,7 @@ def cmd_crawl(a) -> int:
     if not names:
         return 1
     print(f"crawling {', '.join(names)} concurrently...")
-    log = (lambda m: print("  " + m)) if a.verbose else (lambda m: None)
+    log = lambda m: print("  " + m) if a.verbose or m.startswith("WARNING") else None  # warnings always
     summary = asyncio.run(store.crawl(names, log=log, keep_raw=a.keep_raw))
     for site, s in summary.items():
         print(f"  {site:16} " + (f"{s['offers']} offers in {s['seconds']}s" if s["ok"] else f"FAILED after {s['seconds']}s: {s['error']}"))
@@ -128,6 +128,13 @@ def cmd_serve(a) -> int:
     return 0
 
 
+def _warn_unmatched(model: str | None, offers: list[dict], family: bool) -> None:
+    """With several comma-separated models, say which ones matched nothing (the rest are shown)."""
+    if "," in (model or ""):
+        for part in q.unmatched_parts(model, offers, family):
+            print(f"no model matches '{part}' (skipped)", file=sys.stderr)
+
+
 def cmd_best(a) -> int:
     f = _filters(a)
     index, offers = q.latest(f)
@@ -135,6 +142,7 @@ def cmd_best(a) -> int:
     if not keys:
         print(f"no model matches '{a.model}'." + (f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""))
         return 1
+    _warn_unmatched(a.model, index["offers"], a.family)
     offers = [o for o in offers if o["model_key"] in keys]
     if a.json:
         print(json.dumps(sorted(offers, key=lambda o: o["price_eur"]), indent=1, ensure_ascii=False))
@@ -182,6 +190,7 @@ def cmd_find(a) -> int:
     if a.model:
         keys, _ = q.resolve_models(a.model, index["offers"], family=True)
         offers = [o for o in offers if o["model_key"] in keys]
+        _warn_unmatched(a.model, index["offers"], True)
     best = [q.cheapest(v) for v in q.best_by_config(offers, by_color=a.by_color).values()]
     best.sort(key=lambda o: o["price_eur"], reverse=a.desc)
     best = best[: a.limit]
@@ -238,6 +247,7 @@ def cmd_history(a) -> int:
     if not keys:
         print(f"no model matches '{a.model}'." + (f" Did you mean: {', '.join(sugg)}?" if sugg else ""))
         return 1
+    _warn_unmatched(a.model, index["offers"], a.family)
     rows = q.history(keys, f)
     if a.json:
         print(json.dumps([dict(crawled_at=t, config=list(c), site=s, price_eur=p) for t, c, s, p in rows], indent=1))
@@ -323,9 +333,9 @@ def main(argv: list[str] | None = None) -> int:
 
     def add_filters(sp, model_arg: str | None = None):
         if model_arg == "required":
-            sp.add_argument("model", help='model name, e.g. "oppo find n6"')
+            sp.add_argument("model", help='model name, e.g. "oppo find n6"; several separated by commas: "oppo find n6, xiaomi 18 pro"')
         elif model_arg == "optional":
-            sp.add_argument("--model", help="restrict to models containing these words")
+            sp.add_argument("--model", help="restrict to models containing these words; several separated by commas")
         sp.add_argument("--ram", type=int, help="exact RAM in GB")
         sp.add_argument("--min-ram", type=int)
         sp.add_argument("--storage", help="exact storage: 256, 512, 1tb")
@@ -345,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         sp.add_argument("--site", action="append", choices=list(SITES), help="repeatable")
         sp.add_argument("--include-oos", action="store_true", help="include out-of-stock offers")
         sp.add_argument("--no-delivery", action="store_true", help="include offers the shop does not deliver to the buyer country (shown as noLT)")
-        sp.add_argument("--bank", action="store_true", help="use bank-transfer prices where a shop gives a discount (wonda -4.5%%)")
+        sp.add_argument("--bank", action="store_true", help="use bank-transfer prices where a shop gives a discount (wonda, gshopper -4.5%%, mobilemarvel -4.75%%)")
         sp.add_argument("--coupon", action="store_true", help="apply discount codes (gshopper150: $150 off orders over $1000; codes printed on pages)")
         sp.add_argument("--shipping", action="store_true", help="compare item + shipping to the buyer country (method with import VAT covered, see config.SHIPPING)")
         sp.add_argument("--type", default="phone", choices=["phone", "tablet", "accessory", "any"])
@@ -389,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
     h.set_defaults(func=cmd_history)
 
     ch = sub.add_parser("changes", help="price and stock changes between crawls, newest first")
-    ch.add_argument("model", nargs="?", help="only models containing these words")
+    ch.add_argument("model", nargs="?", help="only models containing these words; several separated by commas")
     ch.add_argument("--since", default="7d", help="24h, 7d, 4w or a date (default %(default)s)")
     ch.add_argument("--kind", action="append", choices=KINDS, help="drop, rise, new, gone, in (back in stock), out (sold out); repeatable")
     ch.add_argument("--site", action="append", choices=list(SITES), help="repeatable")

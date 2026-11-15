@@ -163,7 +163,8 @@ def apply_bank_discount(offers: list[Offer], pct: float | None) -> None:
     for o in offers:
         o.price_eur_bank = round(o.price_eur * (1 - pct / 100), 2) if pct else None
         o.bank_discount_pct = pct or None
-        o.payment_note = f"{pct:g}% off with bank transfer" if pct else o.payment_note  # keep the parser's note
+        if pct:  # the parser's note (e.g. an automatic discount) is kept after it
+            o.payment_note = f"{pct:g}% off with bank transfer" + (f"; {o.payment_note}" if o.payment_note else "")
 
 
 def apply_shipping(o: Offer, rule: dict, eur: float | None = None, method: str | None = None, estimated: bool | None = None,

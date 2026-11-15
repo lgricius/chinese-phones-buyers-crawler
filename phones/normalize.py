@@ -69,8 +69,9 @@ FAMILY_BRANDS = {"ace": "OnePlus", "nord": "OnePlus", "armor": "Ulefone", "galax
 
 # Phrases that never distinguish one phone model from another.
 NOISE = [
-    r"\(?\bglobal\s+(?:version|rom|edition)\b\)?",
-    r"\(?\bchina\s+(?:version|rom|edition)\b\)?",
+    r"\(?\bglobal\s+(?:version|verison|versin|rom|edition)\b\)?",
+    r"\(?\b(?:china|chinese)\s+(?:version|verison|versin|rom|edition)(?:\s*/\s*rom)?\b\)?",  # "Honor Win 2 Chinese Verison", "Chinese version/ROM"
+    r"\(?\btaiwan\s+version\b\)?",
     r"\(?\bcn\s+(?:version|rom)\b\)?",
     r"\(?\bhk\s+version\b\)?",
     r"\(?\bhong\s+kong\s+(?:version|model)\b\)?",
@@ -170,7 +171,7 @@ def title_edition(*texts: str | None) -> str | None:
     blob = " ".join(t for t in texts if t)
     if GLOBAL_ROM_RE.search(blob):
         return "cn_global_rom"
-    if re.search(r"\bglobal\b|\binternational\b|hong kong model|\beu vers(?:ion|in)\b", blob, re.I):
+    if re.search(r"\bglobal\b|\binternational\b|hong kong model|\beu vers(?:ion|in)\b|\btaiwan version\b", blob, re.I):
         return "global"
     if re.search(r"\bchina\b|\bchinese\b|\bcn (?:version|rom)\b", blob, re.I):
         return "cn"
@@ -295,7 +296,7 @@ def pretty_model(model: str) -> str:
         lw = w.lower()
         if lw in ("iqoo",):
             out.append("iQOO")
-        elif lw in ("poco", "rog", "gt", "se", "fe", "rsr", "ai"):
+        elif lw in ("poco", "rog", "gt", "se", "fe", "rsr", "ai", "ii", "iii", "iv", "vi", "vii", "viii", "ix"):  # Roman: "Xperia 1 VIII"
             out.append(lw.upper())
         elif re.fullmatch(r"[a-z]+\d*[a-z]*\+?", lw) and not re.fullmatch(r"[a-z]{1,3}\d+[a-z]*\+?", lw):
             out.append(w[0].upper() + w[1:].lower())
@@ -312,6 +313,10 @@ def model_key(brand: str, model: str) -> str:
     k = re.sub(r"\b([a-z]{1,2}|gt)\s+(\d)", r"\1\2", k)  # "gt 8" == "gt8", "x 300" == "x300"
     k = re.sub(r"\bporsche design\b", "porsche", k)
     k = re.sub(r"\bedition\b", " ", k)  # "Power Edition" == "Power"
+    k = re.sub(r"\b(mate (?:\d+ rs|xt\w*)) ultimate(?: design)?\b", r"\1", k)  # "Mate 80 RS Ultimate Design" == "Mate 80 RS", "Mate XT2 Ultimate Design" == "Mate XT2"
+    k = re.sub(r"\b(?:lingdun )?privacy (?:screen|display)\b", "privacy", k)  # Mate XT2 "Lingdun Privacy Screen" == "(Privacy Display)"
+    k = re.sub(r"^sony (?!xperia\b)", "sony xperia ", k)  # "Sony 1 VIII" == "Sony Xperia 1 VIII"
+    k = re.sub(r"\bxperia (\d+)\s*(viii|vii|vi|iv|v|iii|ii|i)\b", r"xperia \1 \2", k)  # "1VIII" == "1 VIII"
     return re.sub(r"\s+", " ", k).strip()
 
 

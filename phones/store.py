@@ -80,6 +80,19 @@ def compress_snapshots() -> int:
     return n
 
 
+def last_rate(site: str, currency: str) -> tuple[float | None, str | None]:
+    """(EUR per unit of `currency`, crawl date) from the site's latest snapshot with prices in that
+    currency: the median price_eur / price_orig. For a crawl whose currency switch failed."""
+    for _, s, f in reversed(snapshot_files()):
+        if s != site:
+            continue
+        d = _read_json(f)
+        ratios = sorted(o["price_eur"] / o["price_orig"] for o in d["offers"] if o.get("currency_orig") == currency and o.get("price_orig"))
+        if ratios:
+            return round(ratios[len(ratios) // 2], 6), d["crawled_at"][:10]
+    return None, None
+
+
 def load_trends() -> dict:
     return _read_json(TRENDS) if TRENDS.exists() else trends.empty()
 

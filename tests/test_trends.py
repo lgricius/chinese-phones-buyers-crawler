@@ -80,6 +80,16 @@ class TrendsTest(unittest.TestCase):
         black = trends.stats(self.t, {**offer("giztop", "Black", 855.0, usd=950), "oid": self.ids["Black"]})
         self.assertEqual((black["chg"], black["low"], black["at_low"]), (-45.0, 855.0, True))
 
+    def test_zero_price_is_not_listed(self):
+        # trinity listed a sold-out phone at HKD 0, later at HKD 11400: no "change from 0" (was a ZeroDivisionError)
+        z = lambda eur, hkd, stock: {**offer("trinity", "Red", eur, stock), "price_orig": hkd, "currency_orig": "HKD"}
+        t = build([(RUNS[0], AT[0], "trinity", [z(0.0, 0.0, False)]), (RUNS[1], AT[1], "trinity", [z(1311.43, 11400.0, True)])])
+        o = {**z(1311.43, 11400.0, True)}
+        s = trends.stats(t, {**o, "oid": trends.offer_id(o)})
+        self.assertNotIn("chg", s)
+        self.assertEqual((s["since"], s["n"], s.get("new")), ("2026-11-02", 1, True))
+        self.assertEqual([e["kind"] for e in trends.events(t)], ["new"])
+
     def test_update_rebuilds_when_an_older_snapshot_appears(self):
         snaps = {(RUNS[1], "wonda"): {"crawled_at": AT[1], "offers": [offer("wonda", "Blue", 480.0)]}}
         t, rebuilt = trends.update(trends.empty(), list((r, s, (r, s)) for r, s in snaps), snaps.get)

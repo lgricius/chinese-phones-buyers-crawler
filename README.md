@@ -5,12 +5,13 @@ with one shared attribute schema for every shop so offers can be compared like f
 
 | Site | Platform | How it is crawled | EUR price source |
 |---|---|---|---|
-| giztop.com | Magento | category pages + every product page (variant JSON) | shop's EUR switcher (cart quotes EUR; base currency USD, kept as `price_orig`) |
+| giztop.com | Magento | category pages + every product page (variant JSON) | shop's EUR switcher (cart quotes EUR; base currency USD, kept as `price_orig`). If the switch fails, USD prices x the shop rate of the latest snapshot, with a warning |
 | wondamobile.com | Shopify Markets | `products.json` (all variants + description) | the Lithuania/EUR market price list (not USD x rate - the market price differs) |
 | tradingshenzhen.com | PrestaShop + Cloudflare | category pages + every product page (data sheet, firmware options) | native EUR |
 | geekwills.com | Magento (giztop's theme and USD prices) | the smartphones category + every product page (variant JSON) | **USD x ECB reference rate**: it charges in USD only, and its own EUR display uses 0.98 EUR/USD (~10% over ECB) |
 | gshopper.com | Next.js storefront on Magento (since 2026-10-16) | Magento GraphQL: the phones category with every variant + ship-to check per product | GraphQL prices in EUR (`Content-Currency`; the shop's rate from `/rest/V1/directory/currency`); Ship To = Lithuania set in the session (deliverability, shipping, EU VAT included) |
-| trinityelectronic.boutir.com | Boutir (Hong Kong shop platform) | storefront JSON API: every product with all variants (`/apis/storefront/products`) + one guest cart per crawl (shipping, automatic discount) | **HKD x ECB reference rate**: the cart charges HKD (its EUR display is ~0.3% over ECB); the automatic 3% storefront discount is included where the cart applies it |
+| trinityelectronic.boutir.com | Boutir (Hong Kong shop platform) | storefront JSON API: every product with all variants (`/apis/storefront/products`) + one guest cart per crawl (shipping options per country, automatic campaigns) | **HKD x ECB reference rate**: the cart charges HKD (its EUR display is ~0.3% over ECB); automatic storefront campaigns (no code) are included per product by their rules |
+| themobilemarvel.com | Shopify Markets (Hong Kong shop) | `products.json` of the smartphones collection (all variants + description), once in the Lithuania/EUR market and once in HKD + one cart per crawl (shipping, automatic discount); no product pages (the shop rate-limits them) | the Lithuania/EUR market price list (the shop's rate, ~2.5% over ECB, rounded to x.95); its HKD prices kept as `price_orig`; the automatic cart discount ("Summer Sale 2% Off") is included |
 
 ## Setup
 
@@ -27,7 +28,7 @@ shipping and taxes differ per shop: giztop and geekwills pay EU VAT via IOSS (Ex
 ships free from its EU warehouse, from €15 from China; gshopper prices include EU VAT, standard
 shipping to LT is free (`shipping_eur`, `delivery_note`), and items it cannot ship to LT are
 marked unavailable; trinity ships from Hong Kong by courier and says nothing about VAT, so import
-VAT is left to the buyer.
+VAT is left to the buyer; mobilemarvel ships duties-paid (DDP) via its EU warehouse, VAT included.
 
 ## Usage
 
@@ -38,9 +39,10 @@ VAT is left to the buyer.
 ./phones.sh best "oppo find n6"         # every RAM/storage/edition, price per site, cheapest marked *
 ./phones.sh best "honor magic 9 pro max" --storage 512 --links
 ./phones.sh best "magic 9" --family     # all Magic 9 models
+./phones.sh best "xiaomi 18 pro, oppo find x10 pro max"   # several models, comma-separated (also find --model, history, changes)
 ./phones.sh best "oppo find n6" --edition global --include-oos
 ./phones.sh best "oneplus 15" --edition cn_global_rom
-./phones.sh best "oppo find n6" --bank   # use bank-transfer prices (wonda, gshopper: -4.5%)
+./phones.sh best "oppo find n6" --bank   # use bank-transfer prices (wonda, gshopper: -4.5%, mobilemarvel: -4.75%)
 ./phones.sh best "oppo find n6" --shipping   # compare item + shipping to LT
 ./phones.sh best "oppo find n6" --coupon --links   # apply discount codes, show which code to enter
 ./phones.sh best "xiaomi 18 pro" --by-color      # one row per colour family
@@ -82,7 +84,7 @@ The app uses `catalog.js` when present, else fetches `index.json`, so the projec
 also be put on any static host (nginx, GitHub Pages, S3, `npx serve`). Exclude `data/raw/` from
 anything you publish.
 
-- **Global search**: model names first, then chipset/OS/colour/shop; understands `16/512`, `12+256`, `1tb`, `16gb`, `global`, `eu`
+- **Global search**: model names first, then chipset/OS/colour/shop; understands `16/512`, `12+256`, `1tb`, `16gb`, `global`, `eu`. Separate several searches with commas to see them together: `xiaomi 18 pro, oppo find x10 pro max 16/512` (sizes and words apply to their own part)
 - **Price trend** filter: price dropped in the last 7 / 30 days, at the lowest price seen, new in the last 7 days
 - **Facets with counts** (counted within the current search): manufacturer and chipset (with filter boxes), edition, shop, RAM, storage, colour, battery range, condition, Google Play, type; plus price range, in stock, ships from EU. Chipset names are unified across shops (`normalize.norm_chipset`). Chipset and battery filters (web and `--chipset` / `--min-battery`) use one value per model and hardware edition (CN or Global) that the shops agree on (`store.agree_specs`, one vote per shop), so a shop naming the chip differently ("8 Elite Gen 6" vs "8 Elite Extreme Gen 6"), a page with a stray value, or a shop stating nothing does not drop out of the results. The model details list shops that say otherwise; the Offers view marks them with ≠
 - **Models view**: one line per phone and colour, with editions, variants, shops, specs and from-price (untick "Colours as separate lines" to group colours per phone); click to open the variant x shop price grid with the best price marked, links to each shop, the last price change, and the sentence each edition was read from. Below the grid: the price history of one variant (click a row to pick it) - a chart with a line per shop, "now vs lowest seen", and per shop the lowest price, 30-day range, last change, drops/rises and how often it was in stock. The Change column sorts by the last price change (30 days), biggest drop first
@@ -106,7 +108,8 @@ results) adds it to every price; on the CLI use `--shipping`. Bank discounts app
 | tradingshenzhen | **no delivery to LT**: not in the delivery widget's country list (checked each crawl, offers get `delivers: false`) | - | - |
 | gshopper | Standard (per product ship-to check) | usually free | included in the price |
 | wonda | EU Standard, 8-10 working days | €53.80 flat, quoted from a cart each crawl | **not stated** (`VAT?`): 21% import VAT + carrier fee may be due on delivery |
-| trinity | Air Mail (FedEx Priority / DHL Express) from Hong Kong | HKD 500 flat per order (~€57 at ECB), quoted from a guest cart each crawl; the seller may change it per order | **not stated** (`VAT?`): nothing in its terms or product texts. A phone is over €150, so 21% LT import VAT on item + shipping and the courier's clearance fee are due on delivery (customs duty on phones is 0%) |
+| trinity | Air Mail (FedEx Priority / DHL Express) from Hong Kong, the only courier option to LT (HKD 400 is GB/US only) | HKD 500 flat per order (€57.52 at ECB, 2026-11-12), quoted from a guest cart each crawl; the seller may change it per order | **not stated** (`VAT?`): nothing in its terms or product texts. A phone is over €150, so 21% LT import VAT on item + shipping and the courier's clearance fee are due on delivery (customs duty on phones is 0%) |
+| mobilemarvel | **EU Tax-Included Shipping (DDP – Duties & Taxes Paid)**, UPS via its EU warehouse, 6-12 days. Picked by name from the cart's rates (the crawl falls back to config, flagged estimated, if the cart has no DDP rate). Its other EU option, FedEx Express, leaves VAT/duties to the buyer and is not used | €53.95 flat (HKD 450 at the shop's rate), quoted from a cart each crawl | **paid by the shop**: VAT, customs duties and import fees prepaid; "In the unlikely event that you are asked to pay any VAT or customs charges under this option, please contact us with proof of payment and we will reimburse you 100%" (shipping policy) |
 
 Offers a shop does not deliver to `COUNTRY` (`delivers: false`) are hidden from queries;
 `--no-delivery` shows them, flagged `noLT`.
@@ -116,8 +119,8 @@ Offers a shop does not deliver to `COUNTRY` (`delivers: false`) are hidden from 
 `config.DISABLED_SITES` takes a shop out of crawls, the index, the web view and price trends,
 with the reason shown in the web view's header and the CLI legend. Its code and stored data
 are kept: remove the entry and crawl it to bring it back (`crawl --site <name>` skips it
-while disabled). Currently disabled: **trinity** and **geekwills** (removed from the
-catalog on request, 2026-10-18) and **tradingshenzhen** (removed on request, 2026-10-21; it does
+while disabled). Currently disabled: **geekwills** (removed from the catalog on request,
+2026-10-18) and **tradingshenzhen** (removed on request, 2026-10-21; it does
 not deliver to Lithuania - Latvia and Poland are in its list).
 
 ## Discount codes
@@ -149,11 +152,29 @@ The web toggle **Discount codes** and the CLI `--coupon` apply them. Codes expir
 
 ### trinity
 
-No codes. Its storefront campaign ("Enjoy 3% Summer Order Discount") is applied automatically
-to every guest cart, so it is part of `price_eur` (noted in `payment_note`). It is re-measured
-from the crawl's guest cart, so it disappears from the prices when the campaign ends. Products
-with `campaign_handling: 1` (camera kits, lenses, a few special editions) are excluded: their
-cart got no discount (checked 2026-10-16).
+No codes: none on the site, its Facebook page or coupon sites (checked 2026-11-12; "Trinity
+Electronics" codes on coupon sites are another shop's). No payment-method discount or card surcharge.
+
+Instead it runs **automatic storefront campaigns** (no code, every guest cart gets them), read
+from the crawl's guest cart (`all_can_see_campaigns`) and applied per product by their own rules,
+so they are part of `price_eur` (noted in `payment_note`, with the end date) and drop out when the
+campaign ends. Now: **"11-11 Crazy Sale", 5% off orders of HKD 10000 or more, until 2026-11-19**
+(the cart gave 5% at HKD 13800 and 15000, nothing at HKD 8280). Not discounted: products with
+`campaign_handling: 1` (camera kits, lenses, a few special editions; checked 2026-10-16), items
+already on sale (original price above price), excluded products/categories/hashtags, and
+members-only, first-order or tiered campaigns (not modelled). The minimum spend is per order, so a
+cheaper phone gets the discount when bought together with something else (not shown).
+
+### mobilemarvel
+
+No codes (checked 2026-11-15: none on the site or coupon sites; "Marvel" codes there are marvel.com's;
+no newsletter offer). Two discounts without a code:
+
+- **Automatic cart discount**, "Summer Sale 2% Off" now: every cart gets it (a new phone, a used one and a
+  photo kit were tried). Measured from the crawl's cart line and included in `price_eur` (noted in
+  `payment_note`), so it drops out when the sale ends. Its end date and any limits are not shown.
+- **Bank transfer 4.75% off all orders** (site banner; "Bank Deposit" payment): `config.BANK_TRANSFER_DISCOUNT`.
+  Whether it stacks with the 2% is not confirmed (shown only when the order is placed).
 
 ## Shared attributes (one schema for all sites)
 
@@ -167,7 +188,7 @@ cart got no discount (checked 2026-10-16).
 | `price_eur`, `in_stock` | standard checkout price (card/PayPal) in the buyer market |
 | `shipping_eur`, `shipping_method`, `shipping_estimated`, `vat`, `vat_note` | shipping to the buyer country and who pays import VAT: `included` / `shop` / `not_stated` (see Shipping and VAT) |
 | `coupon_code`, `coupon_eur`, `coupon_note`, `price_eur_coupon` | best discount code for this variant and its value in EUR (see Discount codes) |
-| `price_eur_bank`, `payment_note` | price with the marketplace's bank-transfer discount, applied to all its products from `BANK_TRANSFER_DISCOUNT` in `phones/config.py` (wonda, gshopper: 4.5%); the crawl warns if a site states a different value |
+| `price_eur_bank`, `payment_note` | price with the marketplace's bank-transfer discount, applied to all its products from `BANK_TRANSFER_DISCOUNT` in `phones/config.py` (wonda, gshopper: 4.5%; mobilemarvel: 4.75%); the crawl warns if a site states a different value |
 | `price_orig`, `currency_orig` | price in the shop's own default currency (giztop, geekwills: USD), to check against the site |
 | `price_base` | wonda: the EUR price divided by the storefront's daily Shopify Markets rate; used only by the price trends |
 | `color`, `color_family` | one offer per colour: the shop's name ("Phantom Black") and a family comparable across shops (black, white, titanium, transparent, two-tone...) |
@@ -215,7 +236,7 @@ per offer (shop + product link + chosen options) a point when its price or stock
 was listed / removed. Twenty days of daily crawls with a few percent of prices moving each day
 come to ~250 KB, so the web page loads the whole history in a blink.
 
-- Shops priced in USD (giztop, gshopper, geekwills) are compared in USD, trinity in HKD: a move of the exchange rate alone is
+- Shops priced in USD (giztop, gshopper, geekwills) are compared in USD, trinity and mobilemarvel in HKD: a move of the exchange rate alone is
   not a price change. Wonda's EUR prices are converted from its base prices at a daily rate
   (`Shopify.currency` on the page), so it is compared before that conversion (`price_base`).
   Charts show EUR at each crawl's rate.
@@ -227,6 +248,7 @@ come to ~250 KB, so the web page loads the whole history in a blink.
   parsers were being written (no USD prices at giztop, one price for all colours at tradingshenzhen).
 - Trends are only as good as the crawl frequency: crawl daily (cron / launchd) to see them. A site that fails keeps its previous
 snapshot in the index; if parsing fails the raw data is still kept, so fix + `reindex` recovers it.
+`crawl` always prints `WARNING` lines (also without `-v`), e.g. giztop crawled in USD because its EUR switch timed out.
 
 ## Anti-bot
 

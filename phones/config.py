@@ -9,7 +9,7 @@ CURRENCY = "EUR"
 # Bank-transfer discount per marketplace. It applies to every product of that shop
 # ("Enjoy 4.5% discount by using bank transfer", "Get 4.5% off instantly"), so it
 # is set here once; crawls only warn when the site states a different value.
-BANK_TRANSFER_DISCOUNT = {"wonda": 4.5, "gshopper": 4.5}
+BANK_TRANSFER_DISCOUNT = {"wonda": 4.5, "gshopper": 4.5, "mobilemarvel": 4.75}
 
 # Cart-wide discount codes, in the shop's base currency. gshopper150 is printed on only a
 # few pages but the cart took it on every phone over $1000 tried (12 of 12, 2026-10-10)
@@ -28,7 +28,6 @@ USD_EUR_FALLBACK = 0.894
 # Shops left out of crawls, the index and the web view (code and stored data are kept;
 # remove the entry to bring a shop back, then crawl it).
 DISABLED_SITES: dict[str, str] = {
-    "trinity": "removed from the catalog on request (2026-10-18)",
     "geekwills": "removed from the catalog on request (2026-10-18)",
     "tradingshenzhen": "removed from the catalog on request (2026-10-21); does not deliver to Lithuania",
 }
@@ -49,10 +48,16 @@ SHIPPING = {
     # the EU's IOSS system" (geekwills.com/customs); it also says it declares parcels low.
     "geekwills": {"eur": 26.77, "method": "Express, 5-8 days", "vat": "shop",
                   "vat_note": "VAT/duty paid by Geekwills via IOSS (its customs page: 'in most cases'); IOSS covers parcels up to €150, so a phone is declared below its value"},
-    # One courier method from Hong Kong, a flat HKD 500 per order, re-quoted from a guest cart
-    # every crawl (the seller may change it per order). No VAT/customs statement anywhere.
-    "trinity": {"eur": 56.61, "method": "Air Mail (FedEx Priority / DHL Express)", "vat": "not_stated",
+    # Cheapest courier option serving LT (worldwide "Air Mail", FedEx/DHL from Hong Kong), a flat
+    # HKD 500 per order, re-quoted from a guest cart every crawl (the seller may change it per
+    # order; the HKD 400 option is GB/US only). No VAT/customs statement anywhere.
+    "trinity": {"eur": 57.52, "method": "Air Mail (FedEx Priority / DHL Express)", "vat": "not_stated",
                 "vat_note": "No VAT/customs statement; ships from Hong Kong by FedEx/DHL, so LT import VAT (21% of item + shipping) and the courier's clearance fee are due on delivery (duty on phones: 0%)"},
+    # "EU Tax-Included Shipping (Duties & VAT Included)", UPS via its EU warehouse: DDP, re-quoted
+    # from a cart every crawl (HKD 450 at the shop's EUR rate). Its FedEx Express option to the EU
+    # leaves VAT/duties to the buyer (declared low): not used.
+    "mobilemarvel": {"eur": 53.95, "method": "EU Tax-Included Shipping (DDP, UPS), 6-12 days", "vat": "shop",
+                     "vat_note": "DDP: EU VAT, duties and import fees prepaid by The Mobile Marvel; it refunds 100% of any charge asked on delivery"},
     "gshopper": {"eur": None, "method": "Standard", "vat": "included",
                  "vat_note": "EU VAT included in the price and paid by Gshopper"},
 }

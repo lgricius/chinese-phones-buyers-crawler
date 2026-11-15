@@ -152,7 +152,8 @@ def _google_play(spec_value: str | None, text: str) -> bool | None:
             return True
     if re.search(r"without\W+google|no google|not (?:support|have|come with)\W+google|google\W+(?:is )?not (?:supported|installed)", text, re.I):
         return False
-    if re.search(r"(?:installed|with|pre-installed|supports?)\W+(?:full\W+)?google(?: play| mobile service| services)?|google play(?: store)? (?:is )?(?:installed|pre-installed|supported)", text, re.I):
+    if re.search(r"(?:installed|with|pre-installed|supports?)\W+(?:full\W+)?google(?: play| mobile service| services)?|google play(?: store)? (?:is )?(?:installed|pre-installed|supported)"
+                 r"|google (?:play|services)(?: store)? can be pre-?installed", text, re.I):  # "Google services can be pre-installed before shipping"
         return True
     return None
 
